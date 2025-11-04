@@ -1,0 +1,35 @@
+title: Web Process Initiating Outbound Connection
+id: c3d4e5f6-a7b8-9012-cdef-123456789012
+status: experimental  
+description: Detects web processes initiating suspicious outbound connections that may indicate C2 communication
+author: Tyler
+date: 2025/11/02
+logsource:
+    product: linux
+    category: network_connection
+detection:
+    selection_process:
+        Image|contains:
+            - 'php'
+            - 'apache'
+            - 'nginx'
+    selection_outbound:
+        Direction: 'outbound'
+        Initiated: 'true'
+    filter_legit:
+        DestinationPort:
+            - 80
+            - 443
+        DestinationIp|startswith:
+            - '10.'
+            - '172.16.'
+            - '192.168.'
+    condition: selection_process and selection_outbound and not filter_legit
+falsepositives:
+    - Legitimate API calls to external services
+    - Software update checks
+level: high
+tags:
+    - attack.command_and_control
+    - attack.t1071
+    - attack.exfiltration

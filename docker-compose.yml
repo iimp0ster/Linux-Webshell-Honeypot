@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  honeypot:
+    image: php:8.0-apache
+    container_name: webshell_honeypot
+    ports:
+      - "80:80"
+    volumes:
+      - ./honeypot/webroot:/var/www/html
+      - ./logs/apache:/var/log/apache2
+      - ./logs/honeypot:/var/log/honeypot
+      - ./sample_webshells:/var/www/html/samples:ro
+    environment:
+      - APACHE_LOG_DIR=/var/log/apache2
+    restart: unless-stopped
+    networks:
+      - honeypot_net
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: sigma_dashboard
+    ports:
+      - "127.0.0.1:8501:8501"
+    volumes:
+      - ./logs:/logs:ro
+      - ./sigma_rules:/sigma_rules
+      - ./sample_webshells:/samples:ro
+      - ./honeypot/webroot/uploads:/uploads:ro
+      - /var/log/audit:/host_audit:ro
+      - /var/log/syslog:/host_syslog:ro
+    environment:
+      - DASHBOARD_PASSWORD=ChangeMe123!
+    restart: unless-stopped
+    networks:
+      - honeypot_net
+    depends_on:
+      - honeypot
+
+networks:
+  honeypot_net:
+    driver: bridge

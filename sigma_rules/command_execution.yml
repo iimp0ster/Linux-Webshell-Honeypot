@@ -1,0 +1,30 @@
+title: Web Server Process Spawning Shell
+id: b2c3d4e5-f6a7-8901-bcde-f12345678901
+status: experimental
+description: Detects web server processes spawning shells which may indicate webshell execution
+author: Tyler
+date: 2025/11/02
+logsource:
+    product: linux
+    category: process_creation
+detection:
+    selection_parent:
+        ParentImage|contains:
+            - 'apache'
+            - 'php-fpm'
+            - 'nginx'
+            - 'httpd'
+    selection_child:
+        Image|endswith:
+            - '/bash'
+            - '/sh'
+            - '/dash'
+    condition: selection_parent and selection_child
+falsepositives:
+    - Legitimate admin scripts executed by web applications
+    - Automated maintenance tasks
+level: critical
+tags:
+    - attack.execution
+    - attack.t1059.004
+    - attack.command_and_control

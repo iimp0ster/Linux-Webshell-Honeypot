@@ -1,0 +1,27 @@
+# Logs
+logs/
+*.log
+
+# Docker
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Sensitive
+*.key
+*.pem
+secrets/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
