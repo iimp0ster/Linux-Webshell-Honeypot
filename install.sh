@@ -81,26 +81,26 @@ echo "[7/10] Downloading project files..."
 cd /opt/sigma-lab
 
 # Download docker-compose.yml
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/sigma-honeypot-lab/main/docker-compose.yml -o docker-compose.yml
+curl -sSL https://raw.githubusercontent.com/iimp0ster/Linux-Webshell-Honeypot/main/docker-compose.yml -o docker-compose.yml
 
 # Download honeypot files
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/sigma-honeypot-lab/main/honeypot/webroot/index.php -o honeypot/webroot/index.php
+curl -sSL https://raw.githubusercontent.com/iimp0ster/Linux-Webshell-Honeypot/main/honeypot/webroot/index.php -o honeypot/webroot/index.php
 
 # Download dashboard files
 mkdir -p dashboard
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/sigma-honeypot-lab/main/dashboard/Dockerfile -o dashboard/Dockerfile
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/sigma-honeypot-lab/main/dashboard/sigma_dashboard.py -o dashboard/sigma_dashboard.py
+curl -sSL https://raw.githubusercontent.com/iimp0ster/Linux-Webshell-Honeypot/main/dashboard/Dockerfile -o dashboard/Dockerfile
+curl -sSL https://raw.githubusercontent.com/iimp0ster/Linux-Webshell-Honeypot/main/dashboard/sigma_dashboard.py -o dashboard/sigma_dashboard.py
 
 # Download sample webshells
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/sigma-honeypot-lab/main/sample_webshells/simple_shell.php -o sample_webshells/simple_shell.php
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/sigma-honeypot-lab/main/sample_webshells/china_chopper.php -o sample_webshells/china_chopper.php
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/sigma-honeypot-lab/main/sample_webshells/wso_shell.php -o sample_webshells/wso_shell.php
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/sigma-honeypot-lab/main/sample_webshells/b374k_mini.php -o sample_webshells/b374k_mini.php
+curl -sSL https://raw.githubusercontent.com/iimp0ster/Linux-Webshell-Honeypot/main/sample_webshells/simple_shell.php -o sample_webshells/simple_shell.php
+curl -sSL https://raw.githubusercontent.com/iimp0ster/Linux-Webshell-Honeypot/main/sample_webshells/china_chopper.php -o sample_webshells/china_chopper.php
+curl -sSL https://raw.githubusercontent.com/iimp0ster/Linux-Webshell-Honeypot/main/sample_webshells/wso_shell.php -o sample_webshells/wso_shell.php
+curl -sSL https://raw.githubusercontent.com/iimp0ster/Linux-Webshell-Honeypot/main/sample_webshells/b374k_mini.php -o sample_webshells/b374k_mini.php
 
 # Download example Sigma rules
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/sigma-honeypot-lab/main/sigma_rules/webshell_upload.yml -o sigma_rules/webshell_upload.yml
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/sigma-honeypot-lab/main/sigma_rules/command_execution.yml -o sigma_rules/command_execution.yml
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/sigma-honeypot-lab/main/sigma_rules/network_connection.yml -o sigma_rules/network_connection.yml
+curl -sSL https://raw.githubusercontent.com/iimp0ster/Linux-Webshell-Honeypot/main/sigma_rules/webshell_upload.yml -o sigma_rules/webshell_upload.yml
+curl -sSL https://raw.githubusercontent.com/iimp0ster/Linux-Webshell-Honeypot/main/sigma_rules/command_execution.yml -o sigma_rules/command_execution.yml
+curl -sSL https://raw.githubusercontent.com/iimp0ster/Linux-Webshell-Honeypot/main/sigma_rules/network_connection.yml -o sigma_rules/network_connection.yml
 
 # Update docker-compose with password
 sed -i "s/DASHBOARD_PASSWORD=.*/DASHBOARD_PASSWORD=$DASHBOARD_PASS/" docker-compose.yml
