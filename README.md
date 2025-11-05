@@ -14,7 +14,7 @@ Deploy a vulnerable web application honeypot, capture real attacks, and build pr
 ### One-Line Installation
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/sigma-honeypot-lab/main/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/iimp0ster/Linux-Webshell-Honeypot/main/install.sh | sudo bash
 ```
 
 **That's it!** In 15 minutes you'll have:
