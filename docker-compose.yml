@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   honeypot:
-    image: php:8.0-apache
+    image: php:8.2-apache
     container_name: webshell_honeypot
     ports:
       - "80:80"
@@ -14,6 +14,12 @@ services:
     environment:
       - APACHE_LOG_DIR=/var/log/apache2
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     networks:
       - honeypot_net
 
@@ -32,12 +38,13 @@ services:
       - /var/log/audit:/host_audit:ro
       - /var/log/syslog:/host_syslog:ro
     environment:
-      - DASHBOARD_PASSWORD=ChangeMe123!
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-ChangeMe123!}
     restart: unless-stopped
     networks:
       - honeypot_net
     depends_on:
-      - honeypot
+      honeypot:
+        condition: service_healthy
 
 networks:
   honeypot_net:

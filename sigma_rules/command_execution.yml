@@ -1,9 +1,13 @@
-title: Web Server Process Spawning Shell
+title: Web Server Process Spawning Shell or Interpreter
 id: b2c3d4e5-f6a7-8901-bcde-f12345678901
 status: experimental
-description: Detects web server processes spawning shells which may indicate webshell execution
+description: |
+  Detects web server processes (Apache, Nginx, php-fpm) spawning shells or script
+  interpreters, which is a strong indicator of webshell execution. Covers both Unix
+  shells and interpreted languages commonly abused post-compromise.
 author: Tyler
 date: 2025/11/02
+modified: 2026/02/20
 logsource:
     product: linux
     category: process_creation
@@ -11,20 +15,43 @@ detection:
     selection_parent:
         ParentImage|contains:
             - 'apache'
+            - 'apache2'
             - 'php-fpm'
+            - 'php'
             - 'nginx'
             - 'httpd'
+            - 'lighttpd'
     selection_child:
         Image|endswith:
+            # Unix shells
             - '/bash'
             - '/sh'
             - '/dash'
+            - '/zsh'
+            - '/ksh'
+            - '/csh'
+            - '/tcsh'
+            # Script interpreters
+            - '/python'
+            - '/python3'
+            - '/perl'
+            - '/ruby'
+            - '/node'
+            # Download utilities (indicates C2 or staging)
+            - '/wget'
+            - '/curl'
+            - '/nc'
+            - '/ncat'
+            - '/netcat'
     condition: selection_parent and selection_child
 falsepositives:
-    - Legitimate admin scripts executed by web applications
-    - Automated maintenance tasks
+    - Legitimate admin scripts executed via web-based management panels
+    - Automated maintenance tasks triggered by web applications
+    - Python/Ruby-based web applications that spawn sub-processes normally
 level: critical
 tags:
     - attack.execution
     - attack.t1059.004
+    - attack.t1059.006
     - attack.command_and_control
+    - attack.t1071
