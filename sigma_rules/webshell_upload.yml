@@ -1,31 +1,55 @@
 title: PHP Webshell Upload Detection
 id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
 status: experimental
-description: Detects creation of PHP files in web directories that may indicate webshell upload
+description: |
+  Detects creation of PHP (or executable script) files in web-accessible directories,
+  which may indicate a webshell upload. The rule fires on ANY PHP file write to a web
+  root — not just files with suspicious names — to avoid missing attackers who use
+  benign-looking filenames such as update.php or config.php.
 author: Tyler
 date: 2025/11/02
+modified: 2026/02/20
 logsource:
     product: linux
     service: auditd
 detection:
+    # Web directory write: a file was created or modified under a known web root
     selection_path:
         type: 'PATH'
+        nametype:
+            - 'CREATE'
+            - 'NORMAL'
         name|contains:
             - '/var/www/'
             - '/usr/share/nginx/'
+            - '/opt/sigma-lab/honeypot/webroot/uploads/'
+    # Any executable/script extension is suspicious when uploaded
     selection_ext:
         name|endswith:
             - '.php'
             - '.phtml'
-    selection_keywords:
-        name|contains:
-            - 'shell'
-            - 'cmd'
-            - 'eval'
-    condition: selection_path and selection_ext and selection_keywords
+            - '.php3'
+            - '.php4'
+            - '.php5'
+            - '.php7'
+            - '.phar'
+            - '.shtml'
+    condition: selection_path and selection_ext
+# Separate higher-confidence rule variant for files with suspicious names
+# (kept as a comment to show the analyst how to layer rules)
+# condition_high_confidence: selection_path and selection_ext and selection_keywords
+# selection_keywords:
+#     name|contains:
+#         - 'shell'
+#         - 'cmd'
+#         - 'eval'
+#         - 'c99'
+#         - 'r57'
+#         - 'wso'
 falsepositives:
     - Legitimate application deployments
-    - CMS installations
+    - CMS installations (WordPress, Joomla, Drupal)
+    - Developer PHP file uploads during development
 level: high
 tags:
     - attack.initial_access

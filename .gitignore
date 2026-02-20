@@ -1,8 +1,17 @@
-# Logs
-logs/
+# Logs — keep directory structure but ignore log content
+logs/**
+!logs/
+!logs/apache/
+!logs/apache/.gitkeep
+!logs/honeypot/
+!logs/honeypot/.gitkeep
 *.log
 
-# Docker
+# Captured webshells — never commit attacker uploads to the repo
+honeypot/webroot/uploads/*
+!honeypot/webroot/uploads/.gitkeep
+
+# Docker secrets — use .env.example as the template, never commit the real .env
 .env
 
 # Python

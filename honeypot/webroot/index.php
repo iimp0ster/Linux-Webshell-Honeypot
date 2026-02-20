@@ -162,29 +162,51 @@
             </form>
             
             <?php
-            // INTENTIONALLY VULNERABLE - No file type validation
+            // INTENTIONALLY VULNERABLE - No file type validation (honeypot design)
             if(isset($_FILES['file'])) {
                 $target_dir = "uploads/";
                 $target_file = $target_dir . basename($_FILES["file"]["name"]);
-                
+
                 if (!file_exists($target_dir)) {
-                    mkdir($target_dir, 0777, true);
+                    mkdir($target_dir, 0755, true);
                 }
-                
-                // Log upload attempt
+
+                // Ensure log directory exists
+                $log_dir = '/var/log/honeypot';
+                if (!file_exists($log_dir)) {
+                    mkdir($log_dir, 0755, true);
+                }
+
+                // Resolve real attacker IP (X-Forwarded-For for proxy/Docker NAT environments)
+                $remote_ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+                $x_forwarded_for = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? null;
+                if ($x_forwarded_for) {
+                    // Header may contain a comma-separated chain; leftmost is the originating client
+                    $forwarded_ips = array_map('trim', explode(',', $x_forwarded_for));
+                    $remote_ip = $forwarded_ips[0];
+                }
+
+                // Collect enriched telemetry for threat intelligence
                 $log_entry = json_encode([
-                    'timestamp' => date('Y-m-d H:i:s'),
-                    'filename' => $_FILES["file"]["name"],
-                    'size' => $_FILES["file"]["size"],
-                    'type' => $_FILES["file"]["type"],
-                    'ip' => $_SERVER['REMOTE_ADDR'],
-                    'user_agent' => $_SERVER['HTTP_USER_AGENT']
-                ]) . "\n";
-                file_put_contents('/var/log/honeypot/uploads.log', $log_entry, FILE_APPEND);
-                
+                    'timestamp'       => gmdate('Y-m-d\TH:i:s\Z'),  // ISO-8601 UTC
+                    'filename'        => $_FILES["file"]["name"],
+                    'size'            => (int)$_FILES["file"]["size"],
+                    'reported_type'   => $_FILES["file"]["type"],
+                    'ip'              => $remote_ip,
+                    'x_forwarded_for' => $x_forwarded_for,
+                    'user_agent'      => $_SERVER['HTTP_USER_AGENT'] ?? '',
+                    'referer'         => $_SERVER['HTTP_REFERER'] ?? '',
+                    'accept_language' => $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '',
+                    'method'          => $_SERVER['REQUEST_METHOD'] ?? '',
+                    'request_uri'     => $_SERVER['REQUEST_URI'] ?? '',
+                ], JSON_UNESCAPED_SLASHES) . "\n";
+                file_put_contents('/var/log/honeypot/uploads.log', $log_entry, FILE_APPEND | LOCK_EX);
+
                 if (move_uploaded_file($_FILES["file"]["tmp_name"], $target_file)) {
-                    echo "<div class='alert success'>✓ File uploaded successfully: <strong>" . htmlspecialchars(basename($_FILES["file"]["name"])) . "</strong></div>";
-                    echo "<p>Access your file: <a href='$target_file' style='color: #3498db; font-weight: 600;'>$target_file</a></p>";
+                    $safe_name = htmlspecialchars(basename($_FILES["file"]["name"]), ENT_QUOTES, 'UTF-8');
+                    $safe_path = htmlspecialchars($target_file, ENT_QUOTES, 'UTF-8');
+                    echo "<div class='alert success'>✓ File uploaded successfully: <strong>" . $safe_name . "</strong></div>";
+                    echo "<p>Access your file: <a href='" . $safe_path . "' style='color: #3498db; font-weight: 600;'>" . $safe_path . "</a></p>";
                 } else {
                     echo "<div class='alert error'>✗ Upload failed. Please try again.</div>";
                 }
@@ -204,12 +226,14 @@
                         $file_path = $upload_dir . $file;
                         $file_size = filesize($file_path);
                         $file_time = date("Y-m-d H:i:s", filemtime($file_path));
+                        $safe_file      = htmlspecialchars($file, ENT_QUOTES, 'UTF-8');
+                        $safe_file_path = htmlspecialchars($file_path, ENT_QUOTES, 'UTF-8');
                         echo "<div class='file-item'>";
                         echo "<div class='file-info'>";
-                        echo "<div class='file-name'>📄 " . htmlspecialchars($file) . "</div>";
+                        echo "<div class='file-name'>📄 " . $safe_file . "</div>";
                         echo "<div class='file-meta'>" . number_format($file_size) . " bytes • Uploaded: $file_time</div>";
                         echo "</div>";
-                        echo "<a href='$file_path' class='file-link'>View</a>";
+                        echo "<a href='" . $safe_file_path . "' class='file-link'>View</a>";
                         echo "</div>";
                     }
                 } else {

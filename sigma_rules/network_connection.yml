@@ -1,35 +1,67 @@
-title: Web Process Initiating Outbound Connection
+title: Web Process Initiating Suspicious Outbound Connection
 id: c3d4e5f6-a7b8-9012-cdef-123456789012
-status: experimental  
-description: Detects web processes initiating suspicious outbound connections that may indicate C2 communication
+status: experimental
+description: |
+  Detects web server processes initiating outbound network connections to non-standard
+  destinations, which may indicate C2 beaconing, reverse-shell callbacks, or data
+  exfiltration. Legitimate connections to external services on port 80/443 are filtered
+  only when both the IP range AND the port are non-suspicious.
 author: Tyler
 date: 2025/11/02
+modified: 2026/02/20
 logsource:
     product: linux
     category: network_connection
 detection:
     selection_process:
         Image|contains:
-            - 'php'
-            - 'apache'
-            - 'nginx'
+            - '/php'
+            - '/php-fpm'
+            - '/apache'
+            - '/apache2'
+            - '/httpd'
+            - '/nginx'
     selection_outbound:
         Direction: 'outbound'
         Initiated: 'true'
-    filter_legit:
-        DestinationPort:
-            - 80
-            - 443
+    # Filter: skip connections that are BOTH to private IP ranges AND standard web ports
+    # Using AND logic here — any non-standard port OR non-private IP remains alertable.
+    filter_legit_internal:
         DestinationIp|startswith:
             - '10.'
             - '172.16.'
+            - '172.17.'
+            - '172.18.'
+            - '172.19.'
+            - '172.20.'
+            - '172.21.'
+            - '172.22.'
+            - '172.23.'
+            - '172.24.'
+            - '172.25.'
+            - '172.26.'
+            - '172.27.'
+            - '172.28.'
+            - '172.29.'
+            - '172.30.'
+            - '172.31.'
             - '192.168.'
-    condition: selection_process and selection_outbound and not filter_legit
+            - '127.'
+    filter_legit_ports:
+        DestinationPort:
+            - 80
+            - 443
+    # Alert if: web process made outbound connection that is NOT
+    # (internal IP AND standard port)
+    condition: selection_process and selection_outbound and not (filter_legit_internal and filter_legit_ports)
 falsepositives:
-    - Legitimate API calls to external services
-    - Software update checks
+    - Legitimate API calls to external services by web applications
+    - Software update checks initiated from PHP/Apache
+    - DNS lookups (port 53) — consider adding a separate DNS exfiltration rule
 level: high
 tags:
     - attack.command_and_control
     - attack.t1071
+    - attack.t1071.001
     - attack.exfiltration
+    - attack.t1041
