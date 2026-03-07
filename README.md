@@ -1,288 +1,171 @@
 # 🎯 Sigma Honeypot Lab
 
-**A complete detection engineering environment for learning threat detection and Sigma rule development.**
-
-Deploy a vulnerable web application honeypot, capture real attacks, and build production-ready Sigma detection rules.
+A detection engineering environment for learning Sigma rule development against real attack data.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-linux-lightgrey.svg)
 ![Docker](https://img.shields.io/badge/docker-required-blue.svg)
-![Contributions](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)
 
 ## 🚀 Quick Start
-
-### One-Line Installation
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/iimp0ster/Linux-Webshell-Honeypot/main/install.sh | sudo bash
 ```
 
-**That's it!** In 15 minutes you'll have:
-- ✅ Vulnerable PHP honeypot (capturing real attacks)
-- ✅ Streamlit dashboard (analyze attacks in real-time)
-- ✅ Pre-loaded sample webshells (start immediately)
-- ✅ Full logging stack (auditd, Sysmon, Apache)
-- ✅ Sigma rule builder & tester
-
-### Access Your Lab
+In ~15 minutes you'll have a running honeypot and analysis dashboard. Access the dashboard via SSH tunnel:
 
 ```bash
-# From your local machine, create SSH tunnel:
 ssh -L 8501:localhost:8501 youruser@honeypot-ip
-
 # Browse to: http://localhost:8501
 ```
-
-## 📋 What You'll Learn
-
-This project teaches practical **Detection Engineering** skills:
-
-1. **Threat Analysis** - Analyze real webshell attacks
-2. **Sigma Rule Development** - Write detection rules from scratch
-3. **Rule Testing** - Validate rules against attack logs
-4. **Threat Intelligence** - Understand attacker TTPs
-5. **Log Analysis** - Parse and correlate security events
-
-## 🎯 Use Cases
-
-### For Detection Engineers
-- Practice writing Sigma rules with real attack data
-- Test rule quality before production deployment
-- Build a personal library of validated detections
-
-### For Threat Researchers
-- Capture live webshell samples
-- Study attacker behavior post-exploitation
-- Collect IOCs for threat intelligence
-
-### For Blue Teams
-- Train junior analysts on attack patterns
-- Validate existing detection rules
-- Research new detection techniques
-
-### For Students
-- Learn detection engineering fundamentals
-- Build cybersecurity portfolio projects
-- Hands-on practice with real threats
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────┐
-│  Internet                           │
-└────────────┬────────────────────────┘
-             │ Port 80
-             ▼
-┌─────────────────────────────────────┐
-│  Vulnerable PHP Honeypot            │
-│  (Intentional file upload vuln)     │
-└────────────┬────────────────────────┘
-             │ All activity logged
-             ▼
-┌─────────────────────────────────────┐
-│  Logging Stack                      │
-│  • Apache logs                      │
-│  • Auditd events                    │
-│  • Sysmon telemetry                 │
-│  • File system monitoring           │
-└────────────┬────────────────────────┘
-             │ Real-time analysis
-             ▼
-┌─────────────────────────────────────┐
-│  Streamlit Dashboard (localhost)    │
-│  • View attacks                     │
-│  • Write Sigma rules                │
-│  • Test detections                  │
-│  • Export rules                     │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│  Internet                                │
+└──────────────┬───────────────────────────┘
+               │ Port 80
+               ▼
+┌──────────────────────────────────────────┐
+│  OwnCloud Honeypot (PHP + Apache)        │
+│  • Fake OwnCloud 10.12.0 login page      │
+│  • Logs all credential attempts          │
+│  • Accepts file uploads (any type)       │
+│  • Webshells stored outside webroot      │
+└──────────────┬───────────────────────────┘
+               │ NDJSON logs
+               ▼
+┌──────────────────────────────────────────┐
+│  Logging Stack                           │
+│  • Apache access/error logs              │
+│  • Auditd — file system & process events │
+│  • Sysmon for Linux — process telemetry  │
+└──────────────┬───────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────┐
+│  Streamlit Dashboard (localhost only)    │
+│  • Attack analysis & visualization       │
+│  • Sigma rule editor + live tester       │
+│  • Webshell classification               │
+└──────────────────────────────────────────┘
 ```
 
 ## 📊 Features
 
 ### Honeypot
-- **Vulnerable by Design** - File upload with zero validation
-- **Realistic UI** - Looks like internal document management system
-- **Comprehensive Logging** - Every interaction captured
-- **Docker Isolated** - Safe to expose to internet
+
+- **OwnCloud disguise** — poses as OwnCloud 10.12.0 with a realistic login page and file manager UI
+- **Credential logging** — every login attempt (username, password, IP, User-Agent) logged to `credentials.log` as NDJSON
+- **Safe capture** — uploaded files are stored outside the webroot so webshells land on disk but cannot execute
+- **Rich telemetry** — 10+ fields per upload event: IP, X-Forwarded-For, User-Agent, filename, size, MIME type, and more
 
 ### Dashboard
-- **Live Attack Monitoring** - See attacks in real-time
-- **Sigma Rule Builder** - Write rules with templates
-- **Rule Testing Engine** - Validate against logs
-- **Sample Webshells** - Pre-loaded for immediate analysis
-- **Attack Statistics** - Visualize attacker behavior
+
+Ten pages covering the full detection-engineering workflow:
+
+| Page | Purpose |
+|------|---------|
+| 📊 Overview | Attack timeline and summary metrics |
+| 📋 Upload Log | Filterable table of all upload events |
+| 📂 Captured Files | Inspect uploaded files with webshell family classification |
+| 💻 Command Telemetry | Auditd-parsed post-exploitation commands |
+| 🌍 IP Intelligence | Geolocation and threat enrichment per source IP |
+| 📏 Sigma Rules | Browse the saved rule library |
+| ✏️ Rule Editor | Write rules with templates; validate and save |
+| 🧪 Rule Tester | Test any rule against real honeypot data |
+| 🔬 Sample Webshells | Pre-loaded reference samples with classification |
+| 📜 Raw Logs | Raw Apache, auditd, and syslog output |
+
+**Detection engineering loop:**
+
+1. Open **✏️ Rule Editor** — choose a template (Upload event, File content, or Process creation)
+2. Write your detection logic, then click **Send to Rule Tester**
+3. In **🧪 Rule Tester** — pick a data source (upload log events or captured file content) and click **Run Test**
+4. Review match count, matched records table, and a per-selection breakdown chart showing which clauses fired
+5. Refine and **Save Rule** to the library
 
 ### Detection Stack
-- **Auditd** - File system & process monitoring
-- **Sysmon for Linux** - Advanced telemetry
-- **Apache Logs** - Web request analysis
-- **EDR Ready** - Compatible with commercial EDR agents
+
+- **Auditd** — file writes, process execution, network connections
+- **Sysmon for Linux** — process creation with command-line arguments
+- **Apache logs** — full HTTP request telemetry
 
 ## 📦 Requirements
 
 - Ubuntu 22.04 or 24.04 LTS
-- 2GB RAM minimum (4GB recommended)
-- 20GB disk space
-- Public IP (for capturing real attacks)
+- 2 GB RAM minimum (4 GB recommended)
+- 20 GB disk space
+- Public IP address (to capture real attacks)
 
-**Recommended Platforms:**
-- DigitalOcean ($6-12/month droplet)
-- AWS EC2 (t3.small)
-- Azure VM (B2s)
-- Google Cloud (e2-small)
+**Recommended platforms:** DigitalOcean ($6–12/mo), AWS EC2 t3.small, Azure B2s, GCP e2-small
 
-## 🔧 Manual Installation
-
-If you prefer manual setup or need customization:
+## 🔧 Manual Setup
 
 ```bash
-# Clone repository
-git clone https://github.com/YOUR_USERNAME/sigma-honeypot-lab.git
-cd sigma-honeypot-lab
-
-# Run setup
+git clone https://github.com/iimp0ster/Linux-Webshell-Honeypot.git
+cd Linux-Webshell-Honeypot
 sudo bash install.sh
-
-# Follow prompts for username and password
 ```
-
-See [docs/QUICK_START.md](docs/QUICK_START.md) for detailed instructions.
-
-## 📖 Documentation
-
-- **[Quick Start Guide](docs/QUICK_START.md)** - Get running in 5 minutes
-- **[Architecture Overview](docs/ARCHITECTURE.md)** - How it works
-- **[Detection Guide](docs/DETECTION_GUIDE.md)** - Writing Sigma rules
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues
 
 ## 🎓 Example Workflow
 
-**1. Deploy the lab** (15 minutes)
-```bash
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/sigma-honeypot-lab/main/install.sh | sudo bash
-```
+**1. Deploy** — run the installer, then SSH-tunnel to the dashboard.
 
-**2. Analyze pre-loaded samples** (30 minutes)
-- Review 4 different webshell types
-- Identify malicious patterns
-- Understand attacker techniques
+**2. Explore samples** — the 🔬 Sample Webshells page has four pre-loaded webshell families (China Chopper, WSO, b374k, generic eval shell) to study before real attacks arrive.
 
-**3. Write your first Sigma rule** (15 minutes)
+**3. Write your first rule** — use the Upload event template in the Rule Editor:
+
 ```yaml
-title: PHP Webshell Upload Detection
+title: PHP Webshell Upload
 logsource:
     product: linux
-    service: auditd
+    category: webshell_upload
 detection:
     selection:
-        type: 'PATH'
-        name|contains: '/var/www/'
-        name|endswith: '.php'
+        filename|endswith:
+            - '.php'
+            - '.phtml'
+            - '.phar'
     condition: selection
 level: high
+tags:
+    - attack.persistence
+    - attack.t1505.003
 ```
 
-**4. Test the rule** (5 minutes)
-- Run attack simulator
-- Validate rule matches
-- Refine detection logic
+**4. Test it** — click **Send to Rule Tester**, switch to 🧪 Rule Tester, and run against your upload log events. The per-selection breakdown shows exactly which clause matched each event.
 
-**5. Wait for real attacks** (24-48 hours)
-- Internet scanners find your honeypot
-- Attackers upload webshells
-- Collect real-world samples
+**5. Wait for real attacks** — internet scanners typically find an exposed port 80 within 24–48 hours. Webshell uploads follow within the first week.
 
-**6. Iterate and improve** (ongoing)
-- Analyze new attacks
-- Write additional rules
-- Build detection library
+**6. Iterate** — analyze new samples, refine rules, build your detection library.
 
 ## 🛡️ Security Notes
 
-**⚠️ IMPORTANT:**
-- This honeypot is **intentionally vulnerable**
-- Deploy on an **isolated system** with no production data
-- Do NOT use on networks with sensitive systems
-- Dashboard is **localhost-only** by default (SSH tunnel required)
-- Consider this system **compromised by design**
+- This honeypot is **intentionally vulnerable** — deploy on an isolated system with no production data
+- Do **not** use on networks with sensitive systems
+- The dashboard is **localhost-only** by default; access via SSH tunnel
+- Uploaded webshells cannot execute (stored outside Apache's webroot), but treat the host as compromised by design
 
 ## 🤝 Contributing
 
-Contributions welcome! Here's how:
-
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/improvement`)
-3. Commit changes (`git commit -am 'Add new Sigma rule template'`)
-4. Push to branch (`git push origin feature/improvement`)
-5. Create Pull Request
+2. Create a feature branch (`git checkout -b feature/my-change`)
+3. Commit and push (`git commit -m 'description'`)
+4. Open a pull request
 
-**Ideas for contributions:**
-- Additional Sigma rule templates
-- New honeypot types (databases, APIs)
-- Improved dashboard features
-- Documentation improvements
-- Bug fixes
-
-## 📝 Example Sigma Rules
-
-The project includes production-ready Sigma rules:
-
-- **Webshell Upload Detection** - File creation in web directories
-- **Command Execution** - Web processes spawning shells
-- **Network Connections** - Outbound C2 callbacks
-- **Persistence** - Cron job creation
-- **Reconnaissance** - System enumeration commands
-
-See [sigma_rules/](sigma_rules/) for complete collection.
-
-## 🎯 Real-World Results
-
-**What you'll capture:**
-
-| Week | Expected Activity |
-|------|------------------|
-| **Day 1-2** | Port scans, vulnerability scanners (Shodan, Masscan) |
-| **Week 1** | First webshell uploads (automated bots) |
-| **Week 2** | China Chopper, WSO shells, command execution |
-| **Week 3+** | Cryptominers, persistence attempts, lateral movement |
-
-**Typical webshells collected:**
-- China Chopper variants
-- WSO (Web Shell by Orb)
-- c99, r57, b374k
-- Custom PHP shells
-- Obfuscated payloads
-
-## 📊 Project Stats
-
-- **Setup Time:** 15 minutes (fully automated)
-- **Time to First Rule:** 20 minutes (using samples)
-- **Time to Real Attacks:** 24-48 hours
-- **Cost:** $6-12/month (cloud hosting)
+Ideas: new honeypot disguises, additional Sigma rule templates, dashboard features, bug fixes.
 
 ## 🙏 Acknowledgments
 
-- **Wiz Research** - HoneyBee inspiration
-- **Sigma Project** - Detection rule format
-- **MITRE ATT&CK** - Attack taxonomy
-- **SwiftOnSecurity** - Sysmon configuration
+- **Sigma Project** — detection rule format
+- **MITRE ATT&CK** — attack taxonomy
+- **SwiftOnSecurity** — Sysmon configuration
+- **Wiz Research** — HoneyBee inspiration
 
-## 📄 License
+## 📄 License & Disclaimer
 
-MIT License - See [LICENSE](LICENSE) for details
+MIT License — see [LICENSE](LICENSE) for details.
 
-## ⚠️ Disclaimer
-
-This tool is for **educational and research purposes only**. The honeypot is intentionally vulnerable and should only be deployed in isolated environments. The authors are not responsible for misuse or damage caused by this software.
-
-## 📞 Contact
-
-**Tyler** - Detection Engineer / Threat Researcher
-
-Questions? Open an issue or submit a PR!
-
----
-
-**⭐ Star this repo if it helped you learn detection engineering!**
-
-**Found it useful? Share with your blue team colleagues!**
+This tool is for **educational and research purposes only**. Deploy only in isolated environments. The authors are not responsible for misuse or damage caused by this software.
