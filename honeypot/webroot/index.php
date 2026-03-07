@@ -1,252 +1,225 @@
+<?php
+session_start();
+
+// Already authenticated — go straight to the file manager
+if (isset($_SESSION['oc_auth']) && $_SESSION['oc_auth'] === true) {
+    header('Location: dashboard.php');
+    exit;
+}
+
+// Resolve real attacker IP (X-Forwarded-For for proxy/Docker NAT)
+function resolve_ip(): string {
+    $xff = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? null;
+    if ($xff) {
+        $ips = array_map('trim', explode(',', $xff));
+        return $ips[0];
+    }
+    return $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+}
+
+$login_error = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $username = $_POST['user'] ?? '';
+    $password = $_POST['password'] ?? '';
+
+    // Log the credential attempt
+    $log_dir = '/var/log/honeypot';
+    if (!file_exists($log_dir)) {
+        mkdir($log_dir, 0755, true);
+    }
+    $xff = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? null;
+    $log_entry = json_encode([
+        'timestamp'       => gmdate('Y-m-d\TH:i:s\Z'),
+        'event'           => 'login_attempt',
+        'username'        => $username,
+        'password'        => $password,
+        'ip'              => resolve_ip(),
+        'x_forwarded_for' => $xff,
+        'user_agent'      => $_SERVER['HTTP_USER_AGENT'] ?? '',
+        'referer'         => $_SERVER['HTTP_REFERER'] ?? '',
+    ], JSON_UNESCAPED_SLASHES) . "\n";
+    file_put_contents('/var/log/honeypot/credentials.log', $log_entry, FILE_APPEND | LOCK_EX);
+
+    // Artificial auth delay to look realistic (~800 ms)
+    usleep(800000);
+
+    // Accept any credentials — honeypot always "succeeds"
+    $_SESSION['oc_auth'] = true;
+    $_SESSION['oc_user'] = $username ?: 'admin';
+    header('Location: dashboard.php');
+    exit;
+}
+?>
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Document Management System</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ownCloud</title>
     <style>
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-            margin: 0;
-            padding: 50px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Open Sans', Arial, sans-serif;
+            font-size: 14px;
+            background: #1d2d44;
             min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
         }
-        .container { 
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-        }
-        h1 { 
-            color: #2c3e50;
-            border-bottom: 3px solid #3498db;
-            padding-bottom: 15px;
-            margin-top: 0;
-        }
-        .subtitle {
-            color: #7f8c8d;
-            margin-top: -10px;
-            margin-bottom: 30px;
-        }
-        .upload-form { 
-            margin: 30px 0;
-            padding: 25px;
-            background: #ecf0f1;
-            border-radius: 8px;
-            border-left: 4px solid #3498db;
-        }
-        .upload-form h2 {
-            margin-top: 0;
-            color: #34495e;
-        }
-        input[type="file"] {
-            margin: 15px 0;
-            padding: 10px;
-            border: 2px dashed #bdc3c7;
+
+        .login-box {
+            background: #fff;
             border-radius: 4px;
+            padding: 40px 40px 32px;
+            width: 330px;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.4);
+            color: #333;
+        }
+
+        .logo-wrap {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        /* OwnCloud cloud SVG logo */
+        .logo-wrap svg {
+            width: 62px;
+            height: 62px;
+        }
+
+        .logo-wrap .brand {
+            display: block;
+            font-size: 22px;
+            font-weight: 300;
+            color: #0082c9;
+            letter-spacing: -0.5px;
+            margin-top: 6px;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        input[type="text"],
+        input[type="password"] {
             width: 100%;
-            box-sizing: border-box;
-            background: white;
+            padding: 10px 12px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 14px;
+            margin-bottom: 14px;
+            outline: none;
+            transition: border-color 0.15s;
         }
-        button { 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 12px 30px;
+
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            border-color: #0082c9;
+            box-shadow: 0 0 0 2px rgba(0,130,201,0.15);
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 11px;
+            background: #0082c9;
+            color: #fff;
             border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 16px;
+            border-radius: 3px;
+            font-size: 15px;
             font-weight: 600;
-            transition: transform 0.2s;
+            cursor: pointer;
+            transition: background 0.15s;
+            margin-top: 4px;
         }
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-        .file-list { 
-            margin-top: 40px;
-        }
-        .file-list h2 {
-            color: #34495e;
-            border-bottom: 2px solid #ecf0f1;
-            padding-bottom: 10px;
-        }
-        .file-item { 
-            padding: 15px;
-            margin: 10px 0;
-            background: #f8f9fa;
-            border-radius: 6px;
+
+        .login-btn:hover { background: #006dac; }
+
+        .login-footer {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-left: 3px solid #3498db;
-            transition: background 0.2s;
-        }
-        .file-item:hover {
-            background: #e8eef2;
-        }
-        .file-info {
-            flex-grow: 1;
-        }
-        .file-name {
-            font-weight: 600;
-            color: #2c3e50;
-            margin-bottom: 5px;
-        }
-        .file-meta {
+            margin-top: 18px;
             font-size: 12px;
-            color: #7f8c8d;
+            color: #999;
         }
-        .file-link {
-            color: #3498db;
+
+        .login-footer a {
+            color: #0082c9;
             text-decoration: none;
-            padding: 8px 16px;
-            border: 1px solid #3498db;
-            border-radius: 4px;
-            transition: all 0.2s;
         }
-        .file-link:hover {
-            background: #3498db;
-            color: white;
-        }
-        .alert { 
-            padding: 15px 20px;
-            border-radius: 6px;
-            margin: 15px 0;
+
+        .login-footer label {
             display: flex;
             align-items: center;
+            gap: 5px;
+            font-size: 12px;
+            color: #666;
+            margin: 0;
+            cursor: pointer;
         }
-        .success { 
-            background: #d4edda;
-            color: #155724;
-            border-left: 4px solid #28a745;
-        }
-        .error { 
-            background: #f8d7da;
-            color: #721c24;
-            border-left: 4px solid #dc3545;
-        }
-        .footer {
-            margin-top: 50px;
-            padding-top: 25px;
-            border-top: 1px solid #ecf0f1;
+
+        .version-info {
+            margin-top: 24px;
             text-align: center;
-            color: #95a5a6;
-            font-size: 13px;
-        }
-        .badge {
-            display: inline-block;
-            padding: 4px 8px;
-            background: #3498db;
-            color: white;
-            border-radius: 3px;
             font-size: 11px;
-            font-weight: 600;
-            margin-left: 10px;
+            color: rgba(255,255,255,0.4);
+        }
+
+        .error-msg {
+            background: #fce4e4;
+            border: 1px solid #f5c6cb;
+            border-radius: 3px;
+            padding: 10px 12px;
+            color: #721c24;
+            font-size: 13px;
+            margin-bottom: 14px;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>📁 Document Management System <span class="badge">v2.1.4</span></h1>
-        <p class="subtitle">Internal file sharing portal - Upload and manage documents securely</p>
-        
-        <div class="upload-form">
-            <h2>📤 Upload Document</h2>
-            <form method="post" enctype="multipart/form-data">
-                <input type="file" name="file" required>
-                <button type="submit">Upload File</button>
-            </form>
-            
-            <?php
-            // INTENTIONALLY VULNERABLE - No file type validation (honeypot design)
-            if(isset($_FILES['file'])) {
-                $target_dir = "uploads/";
-                $target_file = $target_dir . basename($_FILES["file"]["name"]);
-
-                if (!file_exists($target_dir)) {
-                    mkdir($target_dir, 0755, true);
-                }
-
-                // Ensure log directory exists
-                $log_dir = '/var/log/honeypot';
-                if (!file_exists($log_dir)) {
-                    mkdir($log_dir, 0755, true);
-                }
-
-                // Resolve real attacker IP (X-Forwarded-For for proxy/Docker NAT environments)
-                $remote_ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-                $x_forwarded_for = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? null;
-                if ($x_forwarded_for) {
-                    // Header may contain a comma-separated chain; leftmost is the originating client
-                    $forwarded_ips = array_map('trim', explode(',', $x_forwarded_for));
-                    $remote_ip = $forwarded_ips[0];
-                }
-
-                // Collect enriched telemetry for threat intelligence
-                $log_entry = json_encode([
-                    'timestamp'       => gmdate('Y-m-d\TH:i:s\Z'),  // ISO-8601 UTC
-                    'filename'        => $_FILES["file"]["name"],
-                    'size'            => (int)$_FILES["file"]["size"],
-                    'reported_type'   => $_FILES["file"]["type"],
-                    'ip'              => $remote_ip,
-                    'x_forwarded_for' => $x_forwarded_for,
-                    'user_agent'      => $_SERVER['HTTP_USER_AGENT'] ?? '',
-                    'referer'         => $_SERVER['HTTP_REFERER'] ?? '',
-                    'accept_language' => $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '',
-                    'method'          => $_SERVER['REQUEST_METHOD'] ?? '',
-                    'request_uri'     => $_SERVER['REQUEST_URI'] ?? '',
-                ], JSON_UNESCAPED_SLASHES) . "\n";
-                file_put_contents('/var/log/honeypot/uploads.log', $log_entry, FILE_APPEND | LOCK_EX);
-
-                if (move_uploaded_file($_FILES["file"]["tmp_name"], $target_file)) {
-                    $safe_name = htmlspecialchars(basename($_FILES["file"]["name"]), ENT_QUOTES, 'UTF-8');
-                    $safe_path = htmlspecialchars($target_file, ENT_QUOTES, 'UTF-8');
-                    echo "<div class='alert success'>✓ File uploaded successfully: <strong>" . $safe_name . "</strong></div>";
-                    echo "<p>Access your file: <a href='" . $safe_path . "' style='color: #3498db; font-weight: 600;'>" . $safe_path . "</a></p>";
-                } else {
-                    echo "<div class='alert error'>✗ Upload failed. Please try again.</div>";
-                }
-            }
-            ?>
+    <div class="login-box">
+        <div class="logo-wrap">
+            <!-- OwnCloud cloud logo (simplified SVG) -->
+            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <circle cx="50" cy="50" r="50" fill="#0082c9"/>
+                <path d="M73 57a14 14 0 00-6-26.5 18 18 0 00-34 8A12 12 0 0028 60h45a5 5 0 000-3z"
+                      fill="#fff" opacity="0.9"/>
+            </svg>
+            <span class="brand">ownCloud</span>
         </div>
-        
-        <div class="file-list">
-            <h2>📂 Uploaded Files</h2>
-            <?php
-            $upload_dir = 'uploads/';
-            if (is_dir($upload_dir)) {
-                $files = array_diff(scandir($upload_dir), array('.', '..'));
-                if (count($files) > 0) {
-                    echo "<div style='font-size: 13px; color: #7f8c8d; margin-bottom: 15px;'>Total files: <strong>" . count($files) . "</strong></div>";
-                    foreach($files as $file) {
-                        $file_path = $upload_dir . $file;
-                        $file_size = filesize($file_path);
-                        $file_time = date("Y-m-d H:i:s", filemtime($file_path));
-                        $safe_file      = htmlspecialchars($file, ENT_QUOTES, 'UTF-8');
-                        $safe_file_path = htmlspecialchars($file_path, ENT_QUOTES, 'UTF-8');
-                        echo "<div class='file-item'>";
-                        echo "<div class='file-info'>";
-                        echo "<div class='file-name'>📄 " . $safe_file . "</div>";
-                        echo "<div class='file-meta'>" . number_format($file_size) . " bytes • Uploaded: $file_time</div>";
-                        echo "</div>";
-                        echo "<a href='" . $safe_file_path . "' class='file-link'>View</a>";
-                        echo "</div>";
-                    }
-                } else {
-                    echo "<p style='color: #7f8c8d; text-align: center; padding: 30px;'>No files uploaded yet. Be the first to upload!</p>";
-                }
-            }
-            ?>
-        </div>
-        
-        <div class='footer'>
-            <p><strong>Document Management System</strong> v2.1.4</p>
-            <p>© 2025 Internal IT Department • All Rights Reserved</p>
-        </div>
+
+        <?php if ($login_error): ?>
+            <div class="error-msg"><?= htmlspecialchars($login_error, ENT_QUOTES, 'UTF-8') ?></div>
+        <?php endif; ?>
+
+        <form method="post" autocomplete="on">
+            <label for="user">Username or email</label>
+            <input type="text" id="user" name="user" autofocus autocomplete="username"
+                   placeholder="Username or email" required>
+
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" autocomplete="current-password"
+                   placeholder="Password" required>
+
+            <button type="submit" class="login-btn">Log in</button>
+
+            <div class="login-footer">
+                <label>
+                    <input type="checkbox" name="remember"> Remember login
+                </label>
+                <a href="#">Lost your password?</a>
+            </div>
+        </form>
     </div>
+
+    <div class="version-info">ownCloud 10.12.0</div>
 </body>
 </html>

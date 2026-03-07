@@ -34,7 +34,7 @@ services:
       - ./logs:/logs:ro
       - ./sigma_rules:/sigma_rules
       - ./sample_webshells:/samples:ro
-      - ./honeypot/webroot/uploads:/uploads:ro
+      - ./logs/honeypot/captured_files:/captures:ro
       - /var/log/audit:/host_audit:ro
       - /var/log/syslog:/host_syslog:ro
     environment:

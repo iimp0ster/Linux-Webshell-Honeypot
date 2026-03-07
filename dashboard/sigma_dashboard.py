@@ -29,7 +29,7 @@ LOG_DIR = "/logs/honeypot"
 UPLOAD_LOG = os.path.join(LOG_DIR, "uploads.log")
 SIGMA_RULES_DIR = "/sigma_rules"
 SAMPLES_DIR = "/samples"
-UPLOADS_DIR = "/uploads"
+UPLOADS_DIR = "/captures"
 HOST_AUDIT_LOG = "/host_audit/audit.log"
 HOST_SYSLOG = "/host_syslog"
 
