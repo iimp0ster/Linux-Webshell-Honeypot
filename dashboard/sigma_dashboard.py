@@ -9,6 +9,7 @@ import json
 import hashlib
 import time
 import glob
+import fnmatch
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -109,6 +110,184 @@ def classify_webshell(content: str) -> dict:
         "confidence": confidence,
         "matched_indicators": matched_indicators,
     }
+
+
+# ---------------------------------------------------------------------------
+# Sigma Rule Evaluation Engine
+# ---------------------------------------------------------------------------
+
+def _eval_field_match(record_val: str, match_val: str, modifier: str) -> bool:
+    """Apply a single Sigma field condition with the given modifier."""
+    rv = str(record_val).lower()
+    mv = str(match_val).lower()
+    if modifier == "contains":
+        return mv in rv
+    if modifier == "startswith":
+        return rv.startswith(mv)
+    if modifier == "endswith":
+        return rv.endswith(mv)
+    if modifier == "re":
+        return bool(re.search(match_val, record_val, re.IGNORECASE))
+    # no modifier — exact match
+    return rv == mv
+
+
+def _lookup_record_field(record: dict, field: str) -> Optional[str]:
+    """Case-insensitive field lookup; returns None if missing."""
+    for k, v in record.items():
+        if k.lower() == field.lower():
+            return str(v)
+    return None
+
+
+def _eval_selection(selection_val, record: dict) -> bool:
+    """
+    Evaluate one Sigma selection block against a record.
+
+    selection_val may be:
+      - list  → keyword search; any value must appear in ANY record field (OR)
+      - dict  → field conditions; ALL fields must match (AND), values are OR lists
+    """
+    if isinstance(selection_val, list):
+        # Keyword mode: search each value across all record fields
+        record_text = " ".join(str(v) for v in record.values()).lower()
+        return any(str(kw).lower() in record_text for kw in selection_val)
+
+    if isinstance(selection_val, dict):
+        for raw_field, match_val in selection_val.items():
+            # Parse field|modifier syntax
+            parts = raw_field.split("|")
+            field = parts[0]
+            modifier = parts[1] if len(parts) > 1 else ""
+
+            record_val = _lookup_record_field(record, field)
+            if record_val is None:
+                return False  # field not present → selection fails
+
+            # Normalise match_val to a list for uniform OR handling
+            values = match_val if isinstance(match_val, list) else [match_val]
+            if not any(_eval_field_match(record_val, mv, modifier) for mv in values):
+                return False
+        return True
+
+    return False
+
+
+def _eval_condition(condition: str, sel_results: dict[str, bool],
+                    all_names: list[str]) -> bool:
+    """
+    Evaluate a Sigma condition string against pre-computed selection results.
+
+    Handles:
+      - bare selection name            e.g. "selection"
+      - "all of them"
+      - "1 of <pattern>"              e.g. "1 of selection_*"
+      - "all of <pattern>"
+      - "sel_a and sel_b"
+      - "sel_a or sel_b"
+      - "not sel_a"
+      - parentheses for grouping
+    """
+    cond = condition.strip()
+
+    # "all of them"
+    if cond == "all of them":
+        return all(sel_results.values())
+
+    # "1 of <pattern>" / "all of <pattern>"
+    m = re.match(r'^(1|all) of (\S+)$', cond)
+    if m:
+        quantifier, pattern = m.group(1), m.group(2)
+        matched_names = [n for n in all_names if fnmatch.fnmatch(n, pattern)]
+        if quantifier == "1":
+            return any(sel_results.get(n, False) for n in matched_names)
+        return all(sel_results.get(n, False) for n in matched_names)
+
+    # Recursive descent for AND / OR / NOT / parentheses
+    # Tokenise into: identifiers, 'and', 'or', 'not', '(', ')'
+    tokens = re.findall(
+        r'\(|\)|not\b|and\b|or\b|[\w\*]+',
+        cond, re.IGNORECASE
+    )
+
+    pos = [0]  # mutable index
+
+    def peek():
+        return tokens[pos[0]] if pos[0] < len(tokens) else None
+
+    def consume():
+        t = tokens[pos[0]]
+        pos[0] += 1
+        return t
+
+    def parse_primary():
+        t = peek()
+        if t is None:
+            return False
+        if t == '(':
+            consume()
+            val = parse_or()
+            if peek() == ')':
+                consume()
+            return val
+        if t.lower() == 'not':
+            consume()
+            return not parse_primary()
+        # selection name or wildcard
+        consume()
+        # Expand wildcard patterns like "selection_*"
+        if '*' in t:
+            names = [n for n in all_names if fnmatch.fnmatch(n, t)]
+            return any(sel_results.get(n, False) for n in names)
+        return sel_results.get(t, False)
+
+    def parse_and():
+        left = parse_primary()
+        while peek() and peek().lower() == 'and':
+            consume()
+            right = parse_primary()
+            left = left and right
+        return left
+
+    def parse_or():
+        left = parse_and()
+        while peek() and peek().lower() == 'or':
+            consume()
+            right = parse_and()
+            left = left or right
+        return left
+
+    try:
+        return parse_or()
+    except Exception:
+        return False
+
+
+def evaluate_sigma_detection(detection: dict,
+                              record: dict) -> tuple[bool, dict[str, bool]]:
+    """
+    Evaluate a parsed Sigma detection block against a flat record dict.
+
+    Returns:
+        (overall_match: bool, sel_results: dict[selection_name -> bool])
+    """
+    if not detection or not isinstance(detection, dict):
+        return False, {}
+
+    condition = str(detection.get("condition", "")).strip()
+    if not condition:
+        return False, {}
+
+    # Evaluate every named selection / filter block
+    sel_results: dict[str, bool] = {}
+    for key, val in detection.items():
+        if key == "condition":
+            continue
+        sel_results[key] = _eval_selection(val, record)
+
+    all_names = list(sel_results.keys())
+    overall = _eval_condition(condition, sel_results, all_names)
+    return overall, sel_results
 
 
 # ---------------------------------------------------------------------------
@@ -868,7 +1047,7 @@ def page_sigma_editor() -> None:
     st.header("Sigma Rule Editor")
     st.info("Write new Sigma rules and save them to the rules directory.")
 
-    rule_template = """\
+    _process_template = """\
 title: New Detection Rule
 id: 00000000-0000-0000-0000-000000000000
 status: experimental
@@ -892,10 +1071,24 @@ tags:
     - attack.t1059.004
 """.format(date=datetime.utcnow().strftime("%Y/%m/%d"))
 
-    filename = st.text_input("Rule filename (without .yml)", "new_rule")
-    content = st.text_area("Rule YAML", value=rule_template, height=400)
+    template_choice = st.radio(
+        "Start from template",
+        ["Process creation", "Upload event", "File content"],
+        horizontal=True,
+        key="editor_template_choice",
+    )
 
-    col1, col2 = st.columns(2)
+    if template_choice == "Process creation":
+        default_yaml = _process_template
+    elif template_choice == "Upload event":
+        default_yaml = _UPLOAD_EVENT_TEMPLATE
+    else:
+        default_yaml = _FILE_CONTENT_TEMPLATE
+
+    filename = st.text_input("Rule filename (without .yml)", "new_rule")
+    content = st.text_area("Rule YAML", value=default_yaml, height=400)
+
+    col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("Validate YAML"):
             try:
@@ -926,6 +1119,15 @@ tags:
                     st.error(f"Cannot save — YAML error: {exc}")
                 except PermissionError:
                     st.error(f"Permission denied writing to {out_path}. Check volume mount.")
+
+    with col3:
+        if st.button("Send to Rule Tester"):
+            try:
+                yaml.safe_load(content)
+                st.session_state["tester_yaml"] = content
+                st.success("Rule queued — navigate to 🧪 Rule Tester to run it.")
+            except yaml.YAMLError as exc:
+                st.error(f"Fix YAML error before testing: {exc}")
 
 
 def page_sample_webshells() -> None:
@@ -995,6 +1197,259 @@ def check_password() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Rule Tester
+# ---------------------------------------------------------------------------
+
+# Field reference shown to the user so they know what field names to use.
+_UPLOAD_EVENT_FIELDS = [
+    ("filename",        "Uploaded filename, e.g. shell.php"),
+    ("size",            "File size in bytes (integer)"),
+    ("reported_type",   "MIME type reported by browser"),
+    ("ip",              "Source IP address"),
+    ("x_forwarded_for", "X-Forwarded-For header value"),
+    ("user_agent",      "HTTP User-Agent string"),
+    ("referer",         "HTTP Referer header"),
+    ("accept_language", "Accept-Language header"),
+    ("method",          "HTTP method (POST)"),
+    ("request_uri",     "Request URI path"),
+]
+
+_FILE_CONTENT_FIELDS = [
+    ("filename",  "Captured filename, e.g. shell.php"),
+    ("extension", "File extension, e.g. .php"),
+    ("size",      "File size in bytes (integer)"),
+    ("content",   "Full raw text of the file"),
+]
+
+_UPLOAD_EVENT_TEMPLATE = """\
+title: Suspicious PHP Upload
+id: 00000000-0000-0000-0000-000000000001
+status: experimental
+description: Detects PHP file uploads to the honeypot
+author: Your Name
+date: {date}
+logsource:
+    product: linux
+    category: webshell_upload
+detection:
+    selection:
+        filename|endswith:
+            - '.php'
+            - '.phtml'
+            - '.phar'
+    condition: selection
+falsepositives:
+    - Legitimate PHP deployments
+level: high
+tags:
+    - attack.persistence
+    - attack.t1505.003
+""".format(date=datetime.utcnow().strftime("%Y/%m/%d"))
+
+_FILE_CONTENT_TEMPLATE = """\
+title: Eval-Based Webshell Content
+id: 00000000-0000-0000-0000-000000000002
+status: experimental
+description: Detects eval() obfuscation patterns inside uploaded files
+author: Your Name
+date: {date}
+logsource:
+    product: linux
+    category: webshell_file
+detection:
+    selection:
+        content|contains:
+            - 'eval('
+            - 'base64_decode'
+            - 'shell_exec'
+    condition: selection
+falsepositives:
+    - Minified JavaScript frameworks
+level: high
+tags:
+    - attack.persistence
+    - attack.t1505.003
+""".format(date=datetime.utcnow().strftime("%Y/%m/%d"))
+
+
+def page_rule_tester() -> None:
+    st.header("🧪 Sigma Rule Tester")
+    st.info(
+        "Evaluate a Sigma rule against real honeypot data. "
+        "Write a rule in **✏️ Rule Editor** and click *Send to Rule Tester*, "
+        "or select a library rule below."
+    )
+
+    rules = load_sigma_rules()
+    prefill_yaml = st.session_state.pop("tester_yaml", None)
+
+    left, right = st.columns([2, 3], gap="large")
+
+    with left:
+        st.subheader("Rule")
+
+        rule_source = st.radio(
+            "Rule source",
+            ["Library rule", "Paste YAML"],
+            horizontal=True,
+            key="tester_rule_source",
+        )
+
+        detection_block = None
+        rule_yaml_text = ""
+
+        if rule_source == "Library rule":
+            if not rules:
+                st.warning("No rules found in /sigma_rules. Save a rule first.")
+                return
+            selected_name = st.selectbox("Select rule", list(rules.keys()))
+            rule_data = rules[selected_name]
+            rule_yaml_text = rule_data["content"]
+            st.code(rule_yaml_text, language="yaml")
+            parsed = rule_data.get("parsed") or {}
+            detection_block = parsed.get("detection")
+        else:
+            default = prefill_yaml if prefill_yaml else ""
+            rule_yaml_text = st.text_area(
+                "Rule YAML",
+                value=default,
+                height=300,
+                key="tester_paste_yaml",
+            )
+            if rule_yaml_text.strip():
+                try:
+                    parsed = yaml.safe_load(rule_yaml_text) or {}
+                    detection_block = parsed.get("detection")
+                    if not detection_block:
+                        st.warning("No `detection:` block found in the YAML.")
+                except yaml.YAMLError as exc:
+                    st.error(f"YAML parse error: {exc}")
+
+        st.divider()
+        st.subheader("Data source")
+
+        mode = st.radio(
+            "Test against",
+            ["Upload log events", "File content"],
+            key="tester_mode",
+        )
+
+        with st.expander("📋 Available field names", expanded=False):
+            if mode == "Upload log events":
+                st.caption("Use these field names in your Sigma `detection:` block:")
+                st.table(
+                    pd.DataFrame(_UPLOAD_EVENT_FIELDS, columns=["Field", "Description"])
+                )
+            else:
+                st.caption("Use these field names when writing file-content rules:")
+                st.table(
+                    pd.DataFrame(_FILE_CONTENT_FIELDS, columns=["Field", "Description"])
+                )
+
+        run = st.button("▶ Run Test", type="primary", disabled=detection_block is None)
+
+    with right:
+        st.subheader("Results")
+
+        if not run or detection_block is None:
+            st.caption("Configure a rule and click **Run Test** to see results.")
+            return
+
+        # ── Build records to test ──────────────────────────────────────────
+        if mode == "Upload log events":
+            df = load_upload_logs()
+            if df.empty:
+                st.warning("No upload log events found. Upload a file to the honeypot first.")
+                return
+            records = df.to_dict(orient="records")
+        else:
+            files = []
+            if os.path.isdir(UPLOADS_DIR):
+                for p in sorted(Path(UPLOADS_DIR).iterdir()):
+                    if not p.is_file():
+                        continue
+                    try:
+                        content = p.read_text(errors="replace")
+                    except Exception:
+                        content = ""
+                    stat = p.stat()
+                    files.append({
+                        "filename":  p.name,
+                        "extension": p.suffix.lower(),
+                        "size":      stat.st_size,
+                        "content":   content,
+                    })
+            if not files:
+                st.warning("No captured files found in /captures. Upload a file to the honeypot first.")
+                return
+            records = files
+
+        # ── Evaluate ───────────────────────────────────────────────────────
+        total = len(records)
+        matched_records = []
+        all_sel_breakdowns: dict[str, int] = defaultdict(int)
+
+        for rec in records:
+            overall, sel_results = evaluate_sigma_detection(detection_block, rec)
+            if overall:
+                matched_records.append(rec)
+            for sel_name, matched in sel_results.items():
+                if matched:
+                    all_sel_breakdowns[sel_name] += 1
+
+        match_count = len(matched_records)
+        ratio = match_count / total if total else 0.0
+
+        # ── Summary metrics ────────────────────────────────────────────────
+        col_a, col_b, col_c = st.columns(3)
+        col_a.metric("Matched", match_count)
+        col_b.metric("Total", total)
+        col_c.metric("Match rate", f"{ratio:.1%}")
+        st.progress(ratio)
+
+        if match_count == 0:
+            st.warning(
+                "No records matched. Check that your field names match the **Available field names** "
+                "reference in the left panel, and verify your condition logic."
+            )
+        else:
+            # Matched records table
+            st.subheader(f"Matched records ({match_count})")
+            display_cols = (
+                ["timestamp", "filename", "ip", "user_agent", "size"]
+                if mode == "Upload log events"
+                else ["filename", "extension", "size"]
+            )
+            display_cols = [c for c in display_cols if c in matched_records[0]]
+            st.dataframe(
+                pd.DataFrame(matched_records)[display_cols],
+                use_container_width=True,
+            )
+
+        # ── Per-selection breakdown ────────────────────────────────────────
+        if all_sel_breakdowns:
+            st.subheader("Selection breakdown")
+            breakdown_df = pd.DataFrame([
+                {"Selection": k, "Matched": v, "Of total": f"{v}/{total}"}
+                for k, v in sorted(all_sel_breakdowns.items())
+            ])
+            fig = px.bar(
+                breakdown_df,
+                x="Selection",
+                y="Matched",
+                text="Of total",
+                color_discrete_sequence=["#0082c9"],
+            )
+            fig.update_layout(
+                margin=dict(t=20, b=20),
+                yaxis_title="Records matched",
+                xaxis_title="",
+                showlegend=False,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
 # Main app
 # ---------------------------------------------------------------------------
 
@@ -1020,6 +1475,7 @@ def main() -> None:
         "🌍 IP Intelligence",
         "📏 Sigma Rules",
         "✏️ Rule Editor",
+        "🧪 Rule Tester",
         "🔬 Sample Webshells",
         "📜 Raw Logs",
     ])
@@ -1049,6 +1505,8 @@ def main() -> None:
         page_sigma_rules()
     elif page == "✏️ Rule Editor":
         page_sigma_editor()
+    elif page == "🧪 Rule Tester":
+        page_rule_tester()
     elif page == "🔬 Sample Webshells":
         page_sample_webshells()
     elif page == "📜 Raw Logs":
